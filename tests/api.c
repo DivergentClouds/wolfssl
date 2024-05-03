@@ -672,6 +672,93 @@ static int test_wolfCrypt_Cleanup(void)
     return EXPECT_RESULT();
 }
 
+static int test_wc_LoadStaticMemory_ex(void)
+{
+    EXPECT_DECLS;
+#ifdef WOLFSSL_STATIC_MEMORY
+    byte staticMemory[440000];
+    word32 sizeList[WOLFMEM_DEF_BUCKETS] = { WOLFMEM_BUCKETS };
+    word32 distList[WOLFMEM_DEF_BUCKETS] = { WOLFMEM_DIST };
+    WOLFSSL_HEAP_HINT* heap;
+
+    /* Pass in zero everything. */
+    ExpectIntEQ(wc_LoadStaticMemory_ex(NULL, 0, NULL, NULL, NULL, 0, 0, 0),
+            BAD_FUNC_ARG);
+
+    /* Set the heap pointer to NULL. */
+    ExpectIntEQ(wc_LoadStaticMemory_ex(NULL,
+                WOLFMEM_DEF_BUCKETS, sizeList, distList,
+                staticMemory, (word32)sizeof(staticMemory),
+                0, 1),
+            BAD_FUNC_ARG);
+
+    /* Set other pointer values to NULL one at a time. */
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_DEF_BUCKETS, NULL, distList,
+                staticMemory, (word32)sizeof(staticMemory),
+                0, 1),
+            BAD_FUNC_ARG);
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_DEF_BUCKETS, sizeList, NULL,
+                staticMemory, (word32)sizeof(staticMemory),
+                0, 1),
+            BAD_FUNC_ARG);
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_DEF_BUCKETS, sizeList, distList,
+                NULL, (word32)sizeof(staticMemory),
+                0, 1),
+            BAD_FUNC_ARG);
+    /* Set the size of the static buffer to 0. */
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_DEF_BUCKETS, sizeList, distList,
+                staticMemory, 0,
+                0, 1),
+            BUFFER_E);
+
+    /* Set the size of the static buffer to one less than minimum allowed. */
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_DEF_BUCKETS, sizeList, distList,
+                staticMemory,
+                (word32)(sizeof(WOLFSSL_HEAP) + sizeof(WOLFSSL_HEAP_HINT)) - 1,
+                0, 1),
+            BUFFER_E);
+
+    /* Set the number of buckets to 1 too many allowed. */
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_MAX_BUCKETS+1, sizeList, distList,
+                staticMemory, (word32)sizeof(staticMemory),
+                0, 1),
+            BAD_FUNC_ARG);
+
+    /* Set the size of the static buffer to exactly the minimum size. */
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_DEF_BUCKETS, sizeList, distList,
+                staticMemory,
+                (word32)(sizeof(WOLFSSL_HEAP) + sizeof(WOLFSSL_HEAP_HINT)),
+                0, 1),
+            0);
+    wc_UnloadStaticMemory(heap);
+
+    /* Success case. */
+    heap = NULL;
+    ExpectIntEQ(wc_LoadStaticMemory_ex(&heap,
+                WOLFMEM_DEF_BUCKETS, sizeList, distList,
+                staticMemory, (word32)sizeof(staticMemory),
+                0, 1),
+            0);
+    wc_UnloadStaticMemory(heap);
+#endif /* WOLFSSL_STATIC_MEMORY */
+    return EXPECT_RESULT();
+}
+
+
 /*----------------------------------------------------------------------------*
  | Platform dependent function test
  *----------------------------------------------------------------------------*/
@@ -7350,8 +7437,8 @@ done:
     !defined(WOLFSSL_NO_TLS12)
 static THREAD_RETURN WOLFSSL_THREAD test_server_loop(void* args)
 {
-    SOCKET_T sockfd = 0;
-    SOCKET_T clientfd = 0;
+    SOCKET_T sockfd;
+    SOCKET_T clientfd = -1;
     word16 port;
 
     callback_functions* cbf;
@@ -7514,6 +7601,7 @@ static THREAD_RETURN WOLFSSL_THREAD test_server_loop(void* args)
         wolfSSL_shutdown(ssl);
         wolfSSL_free(ssl); ssl = NULL;
         CloseSocket(clientfd);
+        clientfd = -1;
 
         count++;
     }
@@ -7531,7 +7619,8 @@ done:
     if (!sharedCtx)
         wolfSSL_CTX_free(ctx);
 
-    CloseSocket(clientfd);
+    if (clientfd >= 0)
+        CloseSocket(clientfd);
 
 #ifdef WOLFSSL_TIRTOS
     fdCloseSession(Task_self());
@@ -30335,7 +30424,7 @@ static int test_wc_i2d_PKCS12(void)
     EXPECT_DECLS;
 #if !defined(NO_ASN) && !defined(NO_PWDBASED) && defined(HAVE_PKCS12) \
     && !defined(NO_FILESYSTEM) && !defined(NO_RSA) \
-    && !defined(NO_AES) && !defined(NO_DES3) && !defined(NO_SHA)
+    && !defined(NO_AES) && !defined(NO_SHA)
     WC_PKCS12* pkcs12 = NULL;
     unsigned char der[FOURK_BUF * 2];
     unsigned char* pt;
@@ -63548,7 +63637,8 @@ static int test_wolfSSL_dtls_AEAD_limit(void)
 #endif
 
 #if defined(WOLFSSL_DTLS) && \
-    defined(HAVE_IO_TESTS_DEPENDENCIES) && !defined(SINGLE_THREADED)
+    defined(HAVE_IO_TESTS_DEPENDENCIES) && !defined(SINGLE_THREADED) && \
+    !defined(DEBUG_VECTOR_REGISTER_ACCESS_FUZZING)
 static void test_wolfSSL_dtls_send_ch(WOLFSSL* ssl)
 {
     int fd, ret;
@@ -68188,6 +68278,9 @@ static int test_tls13_rpk_handshake(void)
     int typeCnt_c;
     int typeCnt_s;
     int tp;
+#if defined(WOLFSSL_ALWAYS_VERIFY_CB)
+    int isServer;
+#endif
 
     (void)err;
     (void)typeCnt_c;
@@ -68807,7 +68900,7 @@ static int test_tls13_rpk_handshake(void)
                                                         WOLFSSL_SUCCESS);
 
     /* set certificate verify callback to both client and server */
-    int isServer = 0;
+    isServer = 0;
     wolfSSL_SetCertCbCtx(ssl_c, &isServer);
     wolfSSL_set_verify(ssl_c, SSL_VERIFY_PEER, MyRpkVerifyCb);
 
@@ -71566,6 +71659,8 @@ TEST_CASE testCases[] = {
     TEST_DECL(test_ForceZero),
 
     TEST_DECL(test_wolfCrypt_Init),
+
+    TEST_DECL(test_wc_LoadStaticMemory_ex),
 
     /* Locking with Compat Mutex */
     TEST_DECL(test_wc_SetMutexCb),

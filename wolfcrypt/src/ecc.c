@@ -1495,7 +1495,11 @@ static int xil_mpi_import(mp_int *mpi,
 
 #ifdef ECC_CACHE_CURVE
     /* cache (mp_int) of the curve parameters */
+    #ifdef WOLFSSL_NO_MALLOC
+    static ecc_curve_spec ecc_curve_spec_cache[ECC_SET_COUNT];
+    #else
     static ecc_curve_spec* ecc_curve_spec_cache[ECC_SET_COUNT];
+    #endif
     #ifndef SINGLE_THREADED
         static wolfSSL_Mutex ecc_curve_cache_mutex WOLFSSL_MUTEX_INITIALIZER_CLAUSE(ecc_curve_cache_mutex);
     #endif
@@ -1675,6 +1679,9 @@ static int wc_ecc_curve_load(const ecc_set_type* dp, ecc_curve_spec** pCurve,
     }
 #endif
 
+#ifdef WOLFSSL_NO_MALLOC
+    curve = &ecc_curve_spec_cache[x];
+#else
     /* make sure cache has been allocated */
     if (ecc_curve_spec_cache[x] == NULL
     #ifdef WOLFSSL_CUSTOM_CURVES
@@ -1701,6 +1708,8 @@ static int wc_ecc_curve_load(const ecc_set_type* dp, ecc_curve_spec** pCurve,
     else {
         curve = ecc_curve_spec_cache[x];
     }
+#endif /* WOLFSSL_NO_MALLOC */
+
     /* return new or cached curve */
     *pCurve = curve;
 #else
@@ -1780,11 +1789,16 @@ void wc_ecc_curve_cache_free(void)
 
     /* free all ECC curve caches */
     for (x = 0; x < (int)ECC_SET_COUNT; x++) {
+    #ifdef WOLFSSL_NO_MALLOC
+        wc_ecc_curve_cache_free_spec(&ecc_curve_spec_cache[x]);
+        XMEMSET(&ecc_curve_spec_cache[x], 0, sizeof(ecc_curve_spec_cache[x]));
+    #else
         if (ecc_curve_spec_cache[x]) {
             wc_ecc_curve_cache_free_spec(ecc_curve_spec_cache[x]);
             XFREE(ecc_curve_spec_cache[x], NULL, DYNAMIC_TYPE_ECC);
             ecc_curve_spec_cache[x] = NULL;
         }
+    #endif /* WOLFSSL_NO_MALLOC */
     }
 
 #if defined(ECC_CACHE_CURVE) && !defined(SINGLE_THREADED) && \
@@ -6094,19 +6108,10 @@ WOLFSSL_ABI
 int wc_ecc_init_ex(ecc_key* key, void* heap, int devId)
 {
     int ret      = 0;
-#if defined(HAVE_PKCS11)
-    int isPkcs11 = 0;
-#endif
 
     if (key == NULL) {
         return BAD_FUNC_ARG;
     }
-
-#if defined(HAVE_PKCS11)
-    if (key->isPkcs11) {
-        isPkcs11 = 1;
-    }
-#endif
 
 #ifdef ECC_DUMP_OID
     wc_ecc_dump_oids();
@@ -6161,16 +6166,17 @@ int wc_ecc_init_ex(ecc_key* key, void* heap, int devId)
 #endif
 
 #if defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_ECC)
-    #if defined(HAVE_PKCS11)
-        if (!isPkcs11)
+    #ifdef WOLF_CRYPTO_CB
+    /* prefer crypto callback */
+    if (key->devId != INVALID_DEVID)
     #endif
-        {
-            /* handle as async */
-            ret = wolfAsync_DevCtxInit(&key->asyncDev, WOLFSSL_ASYNC_MARKER_ECC,
-                                                            key->heap, devId);
-        }
-#elif defined(HAVE_PKCS11)
-    (void)isPkcs11;
+    {
+        /* handle as async */
+        ret = wolfAsync_DevCtxInit(&key->asyncDev, WOLFSSL_ASYNC_MARKER_ECC,
+                                                        key->heap, devId);
+    }
+    if (ret != 0)
+        return ret;
 #endif
 
 #if defined(WOLFSSL_DSP)
@@ -6222,12 +6228,6 @@ int wc_ecc_init_id(ecc_key* key, unsigned char* id, int len, void* heap,
         ret = BAD_FUNC_ARG;
     if (ret == 0 && (len < 0 || len > ECC_MAX_ID_LEN))
         ret = BUFFER_E;
-
-#if defined(HAVE_PKCS11)
-    XMEMSET(key, 0, sizeof(ecc_key));
-    key->isPkcs11 = 1;
-#endif
-
     if (ret == 0)
         ret = wc_ecc_init_ex(key, heap, devId);
     if (ret == 0 && id != NULL && len != 0) {
@@ -6257,12 +6257,6 @@ int wc_ecc_init_label(ecc_key* key, const char* label, void* heap, int devId)
         if (labelLen == 0 || labelLen > ECC_MAX_LABEL_LEN)
             ret = BUFFER_E;
     }
-
-#if defined(HAVE_PKCS11)
-    XMEMSET(key, 0, sizeof(ecc_key));
-    key->isPkcs11 = 1;
-#endif
-
     if (ret == 0)
         ret = wc_ecc_init_ex(key, heap, devId);
     if (ret == 0) {
@@ -7177,7 +7171,7 @@ int wc_ecc_sign_hash_ex(const byte* in, word32 inlen, WC_RNG* rng,
 
 
 #if defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_ECC) && \
-       defined(WOLFSSL_ASYNC_CRYPT_SW)
+    defined(WOLFSSL_ASYNC_CRYPT_SW)
     if (key->asyncDev.marker == WOLFSSL_ASYNC_MARKER_ECC) {
         if (wc_AsyncSwInit(&key->asyncDev, ASYNC_SW_ECC_SIGN)) {
             WC_ASYNC_SW* sw = &key->asyncDev.sw;
