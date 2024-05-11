@@ -656,9 +656,14 @@ int wc_LoadStaticMemory_ex(WOLFSSL_HEAP_HINT** pHint,
 
     WOLFSSL_ENTER("wc_LoadStaticMemory_ex");
 
-    if (pHint == NULL || buf == NULL || listSz > WOLFMEM_MAX_BUCKETS
-            || sizeList == NULL || distList == NULL) {
+    if (pHint == NULL || buf == NULL || sizeList == NULL || distList == NULL) {
         return BAD_FUNC_ARG;
+    }
+
+    /* Cap the listSz to the actual number of items allocated in the list. */
+    if (listSz > WOLFMEM_MAX_BUCKETS) {
+        WOLFSSL_MSG("Truncating the list of memory buckets");
+        listSz = WOLFMEM_MAX_BUCKETS;
     }
 
     if ((sizeof(WOLFSSL_HEAP) + sizeof(WOLFSSL_HEAP_HINT)) > sz - idx) {
@@ -761,9 +766,14 @@ int wolfSSL_StaticBufferSz_ex(unsigned int listSz,
 
     WOLFSSL_ENTER("wolfSSL_StaticBufferSz_ex");
 
-    if (buffer == NULL || listSz > WOLFMEM_MAX_BUCKETS
-            || sizeList == NULL || distList == NULL) {
+    if (buffer == NULL || sizeList == NULL || distList == NULL) {
         return BAD_FUNC_ARG;
+    }
+
+    /* Cap the listSz to the actual number of items allocated in the list. */
+    if (listSz > WOLFMEM_MAX_BUCKETS) {
+        WOLFSSL_MSG("Truncating the list of memory buckets");
+        listSz = WOLFMEM_MAX_BUCKETS;
     }
 
     /* align pt */
@@ -982,7 +992,7 @@ void* wolfSSL_Malloc(size_t size, void* heap, int type)
                         }
                     #ifdef WOLFSSL_DEBUG_STATIC_MEMORY
                         else {
-                            fprintf(stderr, "Size: %ld, Empty: %d\n", size,
+                            fprintf(stderr, "Size: %lu, Empty: %d\n", (unsigned long) size,
                                                               mem->sizeList[i]);
                         }
                     #endif
@@ -1019,7 +1029,8 @@ void* wolfSSL_Malloc(size_t size, void* heap, int type)
         else {
             WOLFSSL_MSG("ERROR ran out of static memory");
             #ifdef WOLFSSL_DEBUG_MEMORY
-            fprintf(stderr, "Looking for %lu bytes at %s:%d\n", size, func, line);
+                fprintf(stderr, "Looking for %lu bytes at %s:%d\n", (unsigned long) size, func,
+                        line);
             #endif
         }
 
