@@ -1116,7 +1116,11 @@ extern void uITRON4_free(void *p) ;
     #endif
 
     #ifndef SINGLE_THREADED
-        #include "semphr.h"
+        #ifdef PLATFORMIO
+            #include <freertos/semphr.h>
+        #else
+            #include "semphr.h"
+        #endif
     #endif
 #endif
 
@@ -3396,6 +3400,11 @@ extern void uITRON4_free(void *p) ;
     #error The SRTP extension requires DTLS
 #endif
 
+/* FIPS v5 and older doesn't support WOLF_PRIVATE_KEY_ID with PK callbacks */
+#if defined(HAVE_FIPS) && FIPS_VERSION_LT(5,3) && defined(HAVE_PK_CALLBACKS)
+    #define NO_WOLF_PRIVATE_KEY_ID
+#endif
+
 /* Are we using an external private key store like:
  *     PKCS11 / HSM / crypto callback / PK callback */
 #if !defined(WOLF_PRIVATE_KEY_ID) && !defined(NO_WOLF_PRIVATE_KEY_ID) && \
@@ -3544,6 +3553,24 @@ extern void uITRON4_free(void *p) ;
 #endif
 
 /* Some final sanity checks */
+#ifdef WOLFSSL_APPLE_HOMEKIT
+    #ifndef WOLFCRYPT_HAVE_SRP
+        #error "WOLFCRYPT_HAVE_SRP is required for Apple Homekit"
+    #endif
+    #ifndef HAVE_CHACHA
+        #error "HAVE_CHACHA is required for Apple Homekit"
+    #endif
+    #ifdef  USE_FAST_MATH
+        #ifdef FP_MAX_BITS
+            #if FP_MAX_BITS < (8192 * 2)
+                #error "HomeKit FP_MAX_BITS must at least (8192 * 2)"
+            #endif
+        #else
+            #error "HomeKit FP_MAX_BITS must be assigned a value (8192 * 2)"
+        #endif
+    #endif
+#endif
+
 #if defined(WOLFSSL_ESPIDF) && defined(ARDUINO)
     #error "Found both ESPIDF and ARDUINO. Pick one."
 #endif
@@ -3562,6 +3589,15 @@ extern void uITRON4_free(void *p) ;
     #ifndef WOLFSSL_SHA512
         #error "HAVE_ED25519 requires WOLFSSL_SHA512"
     #endif
+#endif
+
+#if (defined(OPENSSL_EXTRA) || defined(OPENSSL_ALL)) && \
+    defined(OPENSSL_COEXIST)
+    #error "OPENSSL_EXTRA can not be defined with OPENSSL_COEXIST"
+#endif
+
+#if !defined(NO_DSA) && defined(NO_SHA)
+    #error "Please disable DSA if disabling SHA-1"
 #endif
 
 /* if configure.ac turned on this feature, HAVE_ENTROPY_MEMUSE will be set,

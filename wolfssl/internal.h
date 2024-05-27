@@ -1731,10 +1731,12 @@ enum Misc {
     AEAD_LEN_OFFSET     = 11,  /* Auth Data: Length          */
     AEAD_AUTH_DATA_SZ   = 13,  /* Size of the data to authenticate */
     AEAD_NONCE_SZ       = 12,
-    AESGCM_IMP_IV_SZ    = 4,   /* Size of GCM/CCM AEAD implicit IV */
+    AESGCM_IMP_IV_SZ    = 4,   /* Size of GCM AEAD implicit IV */
+    AESCCM_IMP_IV_SZ    = 4,   /* Size of CCM AEAD implicit IV */
     AESGCM_EXP_IV_SZ    = 8,   /* Size of GCM/CCM AEAD explicit IV */
     AESGCM_NONCE_SZ     = AESGCM_EXP_IV_SZ + AESGCM_IMP_IV_SZ,
-    GCM_IMP_IV_SZ       = 4,   /* Size of GCM/CCM AEAD implicit IV */
+    GCM_IMP_IV_SZ       = 4,   /* Size of GCM AEAD implicit IV */
+    CCM_IMP_IV_SZ       = 4,   /* Size of CCM AEAD implicit IV */
     GCM_EXP_IV_SZ       = 8,   /* Size of GCM/CCM AEAD explicit IV */
     GCM_NONCE_SZ        = GCM_EXP_IV_SZ + GCM_IMP_IV_SZ,
 
@@ -1773,7 +1775,7 @@ enum Misc {
     ECDHE_SIZE          = 32,  /* ECDHE server size defaults to 256 bit */
 #endif
     MAX_EXPORT_ECC_SZ   = 256, /* Export ANSI X9.62 max future size */
-    MAX_CURVE_NAME_SZ   = 16,  /* Maximum size of curve name string */
+    MAX_CURVE_NAME_SZ   = 18,  /* Maximum size of curve name string */
 
     NEW_SA_MAJOR        = 8,   /* Most significant byte used with new sig algos */
     ED25519_SA_MAJOR    = 8,   /* Most significant byte for ED25519 */
@@ -2180,11 +2182,16 @@ WOLFSSL_LOCAL int  CreateDevPrivateKey(void** pkey, byte* data, word32 length,
                                        int hsType, int label, int id,
                                        void* heap, int devId);
 #endif
+#ifdef WOLFSSL_BLIND_PRIVATE_KEY
+WOLFSSL_LOCAL int wolfssl_priv_der_blind(WC_RNG* rng, DerBuffer* key,
+    DerBuffer** mask);
+WOLFSSL_LOCAL void wolfssl_priv_der_unblind(DerBuffer* key, DerBuffer* mask);
+#endif
 WOLFSSL_LOCAL int  DecodePrivateKey(WOLFSSL *ssl, word32* length);
 #ifdef WOLFSSL_DUAL_ALG_CERTS
 WOLFSSL_LOCAL int  DecodeAltPrivateKey(WOLFSSL *ssl, word32* length);
 #endif
-#ifdef WOLF_PRIVATE_KEY_ID
+#if defined(WOLF_PRIVATE_KEY_ID) || defined(HAVE_PK_CALLBACKS)
 WOLFSSL_LOCAL int GetPrivateKeySigSize(WOLFSSL* ssl);
 #ifndef NO_ASN
     WOLFSSL_LOCAL int  InitSigPkCb(WOLFSSL* ssl, SignatureCtx* sigCtx);
@@ -2360,16 +2367,8 @@ typedef struct CipherSuite {
 #endif
 } CipherSuite;
 
-WOLFSSL_LOCAL void InitSuitesHashSigAlgo(Suites* suites, int haveECDSAsig,
-                                         int haveRSAsig, int haveFalconSig,
-                                         int haveDilithiumSig, int haveAnon,
-                                         int tls1_2, int keySz);
-WOLFSSL_LOCAL void InitSuitesHashSigAlgo_ex(byte* hashSigAlgo, int haveECDSAsig,
-                                            int haveRSAsig, int haveFalconSig,
-                                            int haveDilithiumSig, int haveAnon,
-                                            int tls1_2, int keySz, word16* len);
 /* use wolfSSL_API visibility to be able to test in tests/api.c */
-WOLFSSL_API void InitSuitesHashSigAlgo_ex2(byte* hashSigAlgo, int have,
+WOLFSSL_API void InitSuitesHashSigAlgo(byte* hashSigAlgo, int have,
                                              int tls1_2, int keySz,
                                              word16* len);
 WOLFSSL_LOCAL int AllocateCtxSuites(WOLFSSL_CTX* ctx);
@@ -2690,6 +2689,14 @@ typedef struct ProcPeerCertArgs {
 } ProcPeerCertArgs;
 WOLFSSL_LOCAL int DoVerifyCallback(WOLFSSL_CERT_MANAGER* cm, WOLFSSL* ssl,
         int ret, ProcPeerCertArgs* args);
+WOLFSSL_LOCAL void DoCrlCallback(WOLFSSL_CERT_MANAGER* cm, WOLFSSL* ssl,
+        ProcPeerCertArgs* args, int* outRet);
+
+WOLFSSL_LOCAL int SetupStoreCtxCallback(WOLFSSL_X509_STORE_CTX** store_pt,
+        WOLFSSL* ssl, WOLFSSL_CERT_MANAGER* cm, ProcPeerCertArgs* args,
+        int cert_err, void* heap, int* x509Free);
+WOLFSSL_LOCAL void CleanupStoreCtxCallback(WOLFSSL_X509_STORE_CTX* store,
+        WOLFSSL* ssl, void* heap, int x509Free);
 #endif /* !defined(NO_WOLFSSL_CLIENT) || !defined(WOLFSSL_NO_CLIENT_AUTH) */
 #endif /* !defined NO_CERTS */
 
@@ -3051,7 +3058,7 @@ WOLFSSL_LOCAL int TLSX_UseSNI(TLSX** extensions, byte type, const void* data,
                                                        word16 size, void* heap);
 WOLFSSL_LOCAL byte TLSX_SNI_Status(TLSX* extensions, byte type);
 WOLFSSL_LOCAL word16 TLSX_SNI_GetRequest(TLSX* extensions, byte type,
-                                                                   void** data);
+                                                void** data, byte ignoreStatus);
 
 #ifndef NO_WOLFSSL_SERVER
 WOLFSSL_LOCAL void   TLSX_SNI_SetOptions(TLSX* extensions, byte type,
@@ -3582,6 +3589,9 @@ struct WOLFSSL_CTX {
     int         certChainCnt;
 #endif
     DerBuffer*  privateKey;
+#ifdef WOLFSSL_BLIND_PRIVATE_KEY
+    DerBuffer*  privateKeyMask;             /* Mask of private key DER. */
+#endif
     byte        privateKeyType;
     byte        privateKeyId:1;
     byte        privateKeyLabel:1;
@@ -3590,6 +3600,9 @@ struct WOLFSSL_CTX {
 
 #ifdef WOLFSSL_DUAL_ALG_CERTS
     DerBuffer*  altPrivateKey;
+#ifdef WOLFSSL_BLIND_PRIVATE_KEY
+    DerBuffer*  altPrivateKeyMask;          /* Mask of alt private key DER. */
+#endif
     byte        altPrivateKeyType;
     byte        altPrivateKeyId:1;
     byte        altPrivateKeyLabel:1;
@@ -4045,13 +4058,16 @@ enum KeyExchangeAlgorithm {
     ecc_static_diffie_hellman_kea       /* for verify suite only */
 };
 
-/* Used with InitSuitesHashSigAlgo_ex2 */
+/* Used with InitSuitesHashSigAlgo */
 #define SIG_ECDSA       0x01
 #define SIG_RSA         0x02
 #define SIG_SM2         0x04
 #define SIG_FALCON      0x08
 #define SIG_DILITHIUM   0x10
 #define SIG_ANON        0x20
+/* SIG_ANON is omitted by default */
+#define SIG_ALL         (SIG_ECDSA | SIG_RSA | SIG_SM2 | SIG_FALCON | \
+                         SIG_DILITHIUM)
 
 /* Supported Authentication Schemes */
 enum SignatureAlgorithm {
@@ -4558,6 +4574,9 @@ typedef struct Buffers {
 #ifndef NO_CERTS
     DerBuffer*      certificate;           /* WOLFSSL_CTX owns, unless we own */
     DerBuffer*      key;                   /* WOLFSSL_CTX owns, unless we own */
+#ifdef WOLFSSL_BLIND_PRIVATE_KEY
+    DerBuffer*      keyMask;               /* Mask of private key DER. */
+#endif
     byte            keyType;               /* Type of key */
     byte            keyId:1;               /* Key data is an id not data */
     byte            keyLabel:1;            /* Key data is a label not data */
@@ -4565,6 +4584,9 @@ typedef struct Buffers {
     int             keyDevId;              /* Device Id for key */
 #ifdef WOLFSSL_DUAL_ALG_CERTS
     DerBuffer*      altKey;                /* WOLFSSL_CTX owns, unless we own */
+#ifdef WOLFSSL_BLIND_PRIVATE_KEY
+    DerBuffer*      altKeyMask;            /* Mask of alt private key DER. */
+#endif
     byte            altKeyType;            /* Type of alt key */
     byte            altKeyId:1;            /* Key data is an id not data */
     byte            altKeyLabel:1;         /* Key data is a label not data */
@@ -5874,6 +5896,8 @@ struct WOLFSSL {
 #ifdef HAVE_SECRET_CALLBACK
         SessionSecretCb sessionSecretCb;
         void*           sessionSecretCtx;
+        TicketParseCb   ticketParseCb;
+        void*           ticketParseCtx;
         TlsSecretCb     tlsSecretCb;
         void*           tlsSecretCtx;
     #ifdef WOLFSSL_TLS13
@@ -6125,16 +6149,11 @@ typedef struct {
     int name_len;
     const char *name;
     int nid;
+    word16 curve;
 } WOLF_EC_NIST_NAME;
 extern const WOLF_EC_NIST_NAME kNistCurves[];
-/* This is the longest and shortest curve name in the kNistCurves list. Note we
- * also have quantum-safe group names as well. */
-#define kNistCurves_MIN_NAME_LEN 5
-#ifdef HAVE_PQC
-#define kNistCurves_MAX_NAME_LEN 32
-#else
-#define kNistCurves_MAX_NAME_LEN 7
-#endif
+WOLFSSL_LOCAL int set_curves_list(WOLFSSL* ssl, WOLFSSL_CTX *ctx,
+        const char* names, byte curves_only);
 #endif /* OPENSSL_EXTRA || WOLFSSL_WPAS_SMALL */
 
 /* internal functions */
@@ -6194,6 +6213,7 @@ WOLFSSL_LOCAL int DeriveKeys(WOLFSSL* ssl);
 WOLFSSL_LOCAL int StoreKeys(WOLFSSL* ssl, const byte* keyData, int side);
 
 WOLFSSL_LOCAL int IsTLS(const WOLFSSL* ssl);
+WOLFSSL_LOCAL int IsTLS_ex(const ProtocolVersion pv);
 WOLFSSL_LOCAL int IsAtLeastTLSv1_2(const WOLFSSL* ssl);
 WOLFSSL_LOCAL int IsAtLeastTLSv1_3(ProtocolVersion pv);
 WOLFSSL_LOCAL int IsEncryptionOn(const WOLFSSL* ssl, int isSend);
@@ -6422,6 +6442,7 @@ WOLFSSL_LOCAL int cipherExtraData(WOLFSSL* ssl);
 WOLFSSL_LOCAL word32  LowResTimer(void);
 
 WOLFSSL_LOCAL int FindSuiteSSL(const WOLFSSL* ssl, byte* suite);
+WOLFSSL_LOCAL int FindSuite(const Suites* suites, byte first, byte second);
 
 WOLFSSL_LOCAL void DecodeSigAlg(const byte* input, byte* hashAlgo,
         byte* hsType);

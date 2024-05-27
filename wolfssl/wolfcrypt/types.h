@@ -303,7 +303,8 @@ typedef struct w64wrapper {
     #ifndef WARN_UNUSED_RESULT
         #if defined(WOLFSSL_LINUXKM) && defined(__must_check)
             #define WARN_UNUSED_RESULT __must_check
-        #elif defined(__GNUC__) && (__GNUC__ >= 4)
+        #elif (defined(__GNUC__) && (__GNUC__ >= 4)) || \
+            (defined(__IAR_SYSTEMS_ICC__) && (__VER__ >= 9040001))
             #define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
         #else
             #define WARN_UNUSED_RESULT
@@ -311,7 +312,7 @@ typedef struct w64wrapper {
     #endif /* WARN_UNUSED_RESULT */
 
     #ifndef WC_MAYBE_UNUSED
-        #if (defined(__GNUC__) && (__GNUC__ >= 4)) || defined(__clang__)
+        #if (defined(__GNUC__) && (__GNUC__ >= 4)) || defined(__clang__) || defined(__IAR_SYSTEMS_ICC__)
             #define WC_MAYBE_UNUSED __attribute__((unused))
         #else
             #define WC_MAYBE_UNUSED
@@ -592,7 +593,7 @@ typedef struct w64wrapper {
     #endif
 
     #define WC_DECLARE_HEAP_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
-        VAR_TYPE* VAR_NAME[VAR_ITEMS]; \
+        VAR_TYPE* VAR_NAME[VAR_ITEMS] = { NULL, }; \
         int idx##VAR_NAME = 0, inner_idx_##VAR_NAME
     #define WC_HEAP_ARRAY_ARG(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE) \
         VAR_TYPE* VAR_NAME[VAR_ITEMS]
@@ -769,7 +770,7 @@ typedef struct w64wrapper {
                 defined(WOLFSSL_ZEPHYR) || defined(MICROCHIP_PIC24)
             /* XC32 version < 1.0 does not support strncasecmp. */
             #define USE_WOLF_STRNCASECMP
-            #define XSTRNCASECMP(s1,s2) wc_strncasecmp(s1,s2)
+            #define XSTRNCASECMP(s1,s2,n) wc_strncasecmp((s1),(s2),(n))
         #elif defined(USE_WINDOWS_API) || defined(FREERTOS_TCP_WINSIM)
             #define XSTRNCASECMP(s1,s2,n) _strnicmp((s1),(s2),(n))
         #else
@@ -1400,6 +1401,20 @@ typedef struct w64wrapper {
         #endif
         typedef void*            THREAD_TYPE;
         #define WOLFSSL_THREAD
+    #elif defined(WOLFSSL_USER_THREADING)
+        /* User can define user specific threading types
+         *  THREAD_RETURN
+         *  TREAD_TYPE
+         *  WOLFSSL_THREAD
+         * e.g.
+         *  typedef unsigned int  THREAD_RETURN;
+         *  typedef size_t        THREAD_TYPE;
+         *  #define WOLFSSL_THREAD void
+         *
+         * User can also implement their own wolfSSL_NewThread(),
+         * wolfSSL_JoinThread() and wolfSSL_Cond signaling if they want.
+         * Otherwise, those functions are omitted.
+        */
     #elif defined(WOLFSSL_MDK_ARM) || defined(WOLFSSL_KEIL_TCP_NET) || \
           defined(FREESCALE_MQX)
         typedef unsigned int  THREAD_RETURN;

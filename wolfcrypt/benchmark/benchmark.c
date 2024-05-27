@@ -318,7 +318,7 @@
      * enabled, all if the values in report are blank. */
     #ifdef CONFIG_NEWLIB_NANO_FORMAT
         #if CONFIG_NEWLIB_NANO_FORMAT == 1
-            #error "Nano newlib fomatting must not be enabled for benchmark"
+            #error "Nano newlib formatting must not be enabled for benchmark"
         #endif
     #endif
 
@@ -372,7 +372,7 @@
           defined(CONFIG_IDF_TARGET_ESP32S3)
         #include <xtensa/hal.h>
     #elif defined(CONFIG_IDF_TARGET_ESP8266)
-        /* no CPU HAL for ESP8266, we'll use RTOS tick calc extimates */
+        /* no CPU HAL for ESP8266, we'll use RTOS tick calc estimates */
         #include <FreeRTOS.h>
     #elif defined(CONFIG_IDF_TARGET_ESP32H2)
         /* TODO add ESP32-H2 benchmark support */
@@ -1410,7 +1410,7 @@ static const char* bench_result_words3[][5] = {
         uint64_t thisIncrement = 0; /* The adjusted increment amount.       */
         uint64_t expected_diff = 0; /* FreeRTOS estimated expected CPU diff.*/
     #ifdef DEBUG_WOLFSSL_BENCHMARK_TIMING
-        uint64_t tickCount = 0; /* Currrent rtos tick counter.              */
+        uint64_t tickCount = 0; /* Current rtos tick counter.               */
         uint64_t tickDiff = 0;  /* Tick difference from last check.         */
         uint64_t tickBeginDiff = 0; /* Tick difference from beginning.      */
     #endif
@@ -3018,7 +3018,7 @@ static void* benchmarks_do(void* args)
 
 #ifndef NO_FILESYSTEM
     if (hash_input) {
-        int    rawSz;
+        size_t rawSz;
         XFILE  file;
         file = XFOPEN(hash_input, "rb");
         if (file == XBADFILE)
@@ -3037,7 +3037,7 @@ static void* benchmarks_do(void* args)
 
         XFREE(bench_plain, HEAP_HINT, DYNAMIC_TYPE_WOLF_BIGINT);
 
-        rawSz = (int)bench_buf_size;
+        rawSz = (size_t)bench_buf_size;
         if (bench_buf_size % 16)
             bench_buf_size += 16 - (bench_buf_size % 16);
 
@@ -3052,7 +3052,7 @@ static void* benchmarks_do(void* args)
         }
 
         if ((size_t)XFREAD(bench_plain, 1, rawSz, file)
-                != (size_t)rawSz) {
+                != rawSz) {
             XFCLOSE(file);
             goto exit;
         }
@@ -3064,7 +3064,7 @@ static void* benchmarks_do(void* args)
     }
 
     if (cipher_input) {
-        int    rawSz;
+        size_t rawSz;
         XFILE  file;
         file = XFOPEN(cipher_input, "rb");
         if (file == XBADFILE)
@@ -3083,7 +3083,7 @@ static void* benchmarks_do(void* args)
 
         XFREE(bench_cipher, HEAP_HINT, DYNAMIC_TYPE_WOLF_BIGINT);
 
-        rawSz = (int)bench_buf_size;
+        rawSz = (size_t)bench_buf_size;
         if (bench_buf_size % 16)
             bench_buf_size += 16 - (bench_buf_size % 16);
 
@@ -3099,7 +3099,7 @@ static void* benchmarks_do(void* args)
         }
 
         if ((size_t)XFREAD(bench_cipher, 1, rawSz, file)
-                != (size_t)rawSz) {
+                != rawSz) {
             XFCLOSE(file);
             goto exit;
         }
@@ -4743,9 +4743,9 @@ static void bench_aesecb_internal(int useDeviceID,
     double start;
     DECLARE_MULTI_VALUE_STATS_VARS()
 #ifdef HAVE_FIPS
-    const int benchSz = AES_BLOCK_SIZE;
+    const word32 benchSz = AES_BLOCK_SIZE;
 #else
-    const int benchSz = (int)bench_size;
+    const word32 benchSz = bench_size;
 #endif
 
     WC_CALLOC_ARRAY(enc, Aes, BENCH_MAX_PENDING,
@@ -4768,7 +4768,7 @@ static void bench_aesecb_internal(int useDeviceID,
 
     bench_stats_start(&count, &start);
     do {
-        int outer_loop_limit = (((int)bench_size / benchSz) * 10) + 1;
+        int outer_loop_limit = (int)((bench_size / benchSz) * 10) + 1;
         for (times = 0;
              times < outer_loop_limit /* numBlocks */ || pending > 0;
             ) {
@@ -4821,7 +4821,7 @@ exit_aes_enc:
 
     bench_stats_start(&count, &start);
     do {
-        int outer_loop_limit = (10 * ((int)bench_size / benchSz)) + 1;
+        int outer_loop_limit = (int)(10 * (bench_size / benchSz)) + 1;
         for (times = 0; times < outer_loop_limit || pending > 0; ) {
             bench_async_poll(&pending);
 
@@ -5222,6 +5222,7 @@ void bench_aesccm(int useDeviceID)
         goto exit;
     }
 
+#ifdef HAVE_AES_DECRYPT
     RESET_MULTI_VALUE_STATS_VARS();
 
     bench_stats_start(&count, &start);
@@ -5248,6 +5249,7 @@ void bench_aesccm(int useDeviceID)
         printf("wc_AesCcmEncrypt failed, ret = %d\n", ret);
         goto exit;
     }
+#endif
 
   exit:
 
@@ -5588,7 +5590,7 @@ exit:
 #endif
 
 #ifdef WOLFSSL_SM4_CCM
-void bench_sm4_ccm()
+void bench_sm4_ccm(void)
 {
     wc_Sm4 enc;
     double start;
@@ -7554,12 +7556,12 @@ void bench_sm3(int useDeviceID)
         bench_stats_start(&count, &start);
         do {
             for (times = 0; times < numBlocks; times++) {
-                ret = wc_InitSm3(hash, HEAP_HINT,
+                ret = wc_InitSm3(hash[0], HEAP_HINT,
                     useDeviceID ? devId: INVALID_DEVID);
                 if (ret == 0)
-                    ret = wc_Sm3Update(hash, bench_plain, bench_size);
+                    ret = wc_Sm3Update(hash[0], bench_plain, bench_size);
                 if (ret == 0)
-                    ret = wc_Sm3Final(hash, digest[0]);
+                    ret = wc_Sm3Final(hash[0], digest[0]);
                 if (ret != 0)
                     goto exit_sm3;
                 RECORD_MULTI_VALUE_STATS();
@@ -8156,6 +8158,7 @@ void bench_pbkdf2(void)
     DECLARE_MULTI_VALUE_STATS_VARS()
 
     bench_stats_start(&count, &start);
+    PRIVATE_KEY_UNLOCK();
     do {
         ret = wc_PBKDF2(derived, (const byte*)passwd32, (int)XSTRLEN(passwd32),
             salt32, (int)sizeof(salt32), 1000, 32, WC_SHA256);
@@ -8166,6 +8169,7 @@ void bench_pbkdf2(void)
        || runs < minimum_runs
 #endif
        );
+    PRIVATE_KEY_LOCK();
 
     bench_stats_sym_finish("PBKDF2", 32, count, 32, start, ret);
 #ifdef MULTI_VALUE_STATISTICS
@@ -8246,6 +8250,7 @@ void bench_srtpkdf(void)
     DECLARE_MULTI_VALUE_STATS_VARS()
 
     bench_stats_start(&count, &start);
+    PRIVATE_KEY_UNLOCK();
     do {
         for (i = 0; i < numBlocks; i++) {
             ret = wc_SRTP_KDF(key, AES_128_KEY_SIZE, salt, sizeof(salt),
@@ -8259,6 +8264,7 @@ void bench_srtpkdf(void)
        || runs < minimum_runs
 #endif
        );
+    PRIVATE_KEY_LOCK();
     bench_stats_asym_finish("KDF", 128, "SRTP", 0, count, start, ret);
 #ifdef MULTI_VALUE_STATISTICS
     bench_multi_value_stats(max, min, sum, squareSum, runs);
@@ -8267,6 +8273,7 @@ void bench_srtpkdf(void)
     RESET_MULTI_VALUE_STATS_VARS();
 
     bench_stats_start(&count, &start);
+    PRIVATE_KEY_UNLOCK();
     do {
         for (i = 0; i < numBlocks; i++) {
             ret = wc_SRTP_KDF(key, AES_256_KEY_SIZE, salt, sizeof(salt),
@@ -8280,6 +8287,7 @@ void bench_srtpkdf(void)
        || runs < minimum_runs
 #endif
        );
+    PRIVATE_KEY_LOCK();
     bench_stats_asym_finish("KDF", 256, "SRTP", 0, count, start, ret);
 #ifdef MULTI_VALUE_STATISTICS
     bench_multi_value_stats(max, min, sum, squareSum, runs);
@@ -8288,6 +8296,7 @@ void bench_srtpkdf(void)
     RESET_MULTI_VALUE_STATS_VARS();
 
     bench_stats_start(&count, &start);
+    PRIVATE_KEY_UNLOCK();
     do {
         for (i = 0; i < numBlocks; i++) {
             ret = wc_SRTCP_KDF(key, AES_128_KEY_SIZE, salt, sizeof(salt),
@@ -8301,6 +8310,7 @@ void bench_srtpkdf(void)
        || runs < minimum_runs
 #endif
        );
+    PRIVATE_KEY_LOCK();
     bench_stats_asym_finish("KDF", 128, "SRTCP", 0, count, start, ret);
 #ifdef MULTI_VALUE_STATISTICS
     bench_multi_value_stats(max, min, sum, squareSum, runs);
@@ -8309,6 +8319,7 @@ void bench_srtpkdf(void)
     RESET_MULTI_VALUE_STATS_VARS();
 
     bench_stats_start(&count, &start);
+    PRIVATE_KEY_UNLOCK();
     do {
         for (i = 0; i < numBlocks; i++) {
             ret = wc_SRTCP_KDF(key, AES_256_KEY_SIZE, salt, sizeof(salt),
@@ -8322,6 +8333,7 @@ void bench_srtpkdf(void)
        || runs < minimum_runs
 #endif
        );
+    PRIVATE_KEY_LOCK();
     bench_stats_asym_finish("KDF", 256, "SRTCP", 0, count, start, ret);
 #ifdef MULTI_VALUE_STATISTICS
     bench_multi_value_stats(max, min, sum, squareSum, runs);
@@ -11016,13 +11028,13 @@ exit:
 #ifdef WOLFSSL_SM2
 static void bench_sm2_MakeKey(int useDeviceID)
 {
-    int ret = 0, i, times, count, pending = 0;
+    int ret = 0, i, times, count = 0, pending = 0;
     int deviceID;
     int keySize;
     WC_DECLARE_ARRAY(genKey, ecc_key, BENCH_MAX_PENDING,
                      sizeof(ecc_key), HEAP_HINT);
     char name[BENCH_ECC_NAME_SZ];
-    double start;
+    double start = 0;
     const char**desc = bench_desc_words[lng_index];
     DECLARE_MULTI_VALUE_STATS_VARS()
 

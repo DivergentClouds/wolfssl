@@ -211,7 +211,7 @@ int wc_CmacUpdate(Cmac* cmac, const byte* in, word32 inSz)
     /* Clear CRYPTOCB_UNAVAILABLE return code */
     ret = 0;
 
-    while (inSz != 0) {
+    while ((ret == 0) && (inSz != 0)) {
         word32 add = min(inSz, AES_BLOCK_SIZE - cmac->bufferSz);
         XMEMCPY(&cmac->buffer[cmac->bufferSz], in, add);
 
@@ -449,10 +449,8 @@ int wc_AesCmacVerify_ex(Cmac* cmac,
                                 devId);
     if (ret == 0) {
         compareRet = ConstantCompare(check, a, (int)min(checkSz, aSz));
-    }
-
-    if (ret == 0)
         ret = compareRet ? 1 : 0;
+    }
 
     return ret;
 }
